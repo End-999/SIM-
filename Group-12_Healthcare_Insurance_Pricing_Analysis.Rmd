@@ -1,0 +1,423 @@
+---
+title: "SIM Assignment"
+author: "Sahel Shrestha"
+date: "2025-03-07"
+output: word_document
+---
+
+
+```{r}
+# Load Required Libraries
+
+library(tidyverse) 
+library(ggplot2)
+library(dplyr)
+library(skimr) 
+library(tidyr)
+library(corrplot)
+library(ggcorrplot)
+library(rpart)
+library(randomForest)
+library(caret)
+library(reshape2)
+library(gridExtra)
+library(GGally) 
+```
+
+```{r}
+# Load and Explore Dataset
+
+my_data <- read.csv("insurance.csv")
+my_data
+str(my_data)
+dim(my_data)
+head(my_data)
+tail(my_data)
+```
+
+```{r}
+# View the Dataset in RStudio
+view(my_data) # Opens dataset in a spreadsheet-like view (for manual inspection)
+```
+
+```{r}
+# Check Column Names and Data Summary
+names(my_data)
+skim(my_data)
+```
+
+```{r}
+# Check Data Types and Summary Statistics
+lapply(my_data, class)
+summary(my_data)
+```
+
+```{r}
+# Data Visualization (Categorical Variables)
+cat_vars <- c("sex", "smoker", "region")  # Categorical variables
+
+library(ggplot2)
+# Loop for Bar Plots 
+for (var in cat_vars) {
+  bar <- ggplot(my_data, aes_string(x = var, fill = var)) +
+    geom_bar() +
+    labs(title = paste("Distribution of", var), x = var, y = "Count") +
+    theme_minimal()
+  print(bar)
+}
+```
+
+
+
+```{r}
+num_vars <- c("age", "bmi", "children", "charges")  # Numerical variables
+plots <- list()
+
+# Loop to create histograms and store in list
+for (var in num_vars) {
+  p <- ggplot(my_data, aes(x = .data[[var]])) +
+    geom_histogram(bins = 40, fill = "#0999E9", color = "black", alpha = 0.7) +
+    labs(title = paste("Distribution of", var), x = var, y = "Frequency") +
+    theme_classic(base_size = 14)
+  
+  plots[[var]] <- p  # Store the plot
+}
+
+grid.arrange(grobs = plots, ncol = 2) 
+
+
+```
+
+```{r}
+# Convert categorical variables to factors because correct processing in statistical analysis
+my_data$sex <- as.factor(my_data$sex)
+my_data$smoker <- as.factor(my_data$smoker)
+my_data$region <- as.factor(my_data$region)
+```
+
+```{r}
+#Categorize BMI Levels
+bmi_category <- function(bmi) {
+  if (bmi < 18.5) return("Underweight")
+  else if (bmi >= 18.5 & bmi < 25) return("Normal")
+  else if (bmi >= 25 & bmi < 30) return("Overweight")
+  else return("Obese")
+}
+my_data$bmi_category <- sapply(my_data$bmi, bmi_category)
+my_data$bmi_category <- as.factor(my_data$bmi_category)
+```
+
+```{r}
+# Categorize Charges into Low, Medium, High
+charge_category <- function(charges) {
+  if (charges < 10000) return("Low")
+  else if (charges >= 10000 & charges < 30000) return("Medium")
+  else return("High")
+}
+my_data$charge_category <- as.factor(sapply(my_data$charges, charge_category))
+
+```
+
+```{r}
+head(my_data)
+str(my_data)
+```
+
+```{r}
+# Check for missing values
+check_missing <- function(x) {
+  sum(is.na(x) | x == "" | x == "Unknown", na.rm = TRUE)
+}
+sapply(my_data, check_missing)  # Check all columns
+```
+
+```{r}
+# Boxplot of Charges by smoker
+ggplot(my_data, aes(x = smoker, y = charges, fill = smoker)) + 
+  geom_boxplot() +
+  labs(title = "Insurance Charges by Smoker Status", x = "Smoker", y = "Charges")
+```
+
+
+```{r}
+# Boxplot of charges by region
+ggplot(my_data, aes(x = region, y = charges, fill = region)) + 
+  geom_boxplot() +
+  labs(title = "Insurance Charges by Region", x = "Region", y = "Charges")
+```
+
+```{r}
+# Boxplots of Charges by Sex
+
+ggplot(my_data, aes(x = sex, y = charges, fill = sex)) +
+  geom_boxplot() +
+  labs(title = "Medical Charges by Gender", x = "Gender", y = "Charges")
+```
+
+
+```{r}
+# Scatter plot of BMI vs. Charges by smoker
+ggplot(my_data, aes(x = bmi, y = charges, color = smoker)) +
+  geom_point(alpha = 0.6) +
+  labs(title = "BMI vs. Charges by Smoker Status", x = "BMI", y = "Charges")
+```
+
+```{r}
+# Proportion of Smokers and Non-Smokers
+smoker_count <- my_data %>% count(smoker)
+ggplot(smoker_count, aes(x = "", y = n, fill = smoker)) +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar("y", start = 0) +
+  labs(title = "Proportion of Smokers and Non-Smokers") +
+  theme_void()
+```
+
+```{r}
+# Distribution of Policyholders by Region
+region_count <- my_data %>% count(region)
+ggplot(region_count, aes(x = "", y = n, fill = region)) +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar("y", start = 0) +
+  labs(title = "Distribution of Policyholders by Region") +
+  theme_void()
+```
+
+```{r}
+#Pair plots
+ggpairs(my_data %>% select(age, bmi, children, charges),
+        title = "Pairwise Plot of Selected Variables",
+        upper = list(continuous = "points", combo = "box", discrete = "facetgrid"),
+        lower = list(continuous = "smooth", combo = "dot", discrete = "facetgrid"),
+        diag = list(continuous = "barDiag"),
+        mapping = aes(color = "blue", alpha = 0.7)) +
+  theme_minimal(base_size = 14)
+```
+
+```{r}
+# Correlation Matrix
+# Select numeric variables
+numeric_vars <- my_data %>% select(age, bmi, children, charges)
+
+# Compute correlation matrix
+corr_matrix <- cor(numeric_vars)
+
+corrplot(corr_matrix, 
+         method = "circle",              
+         type = "upper",
+         tl.col = "black",
+         tl.cex = 0.8,
+         addCoef.col = "black",
+         number.cex = 0.7,
+         col = colorRampPalette(c("blue", "white", "red"))(200),
+         cex.main = 1.5)  
+
+title(main = "Correlation Matrix of Selected Variables", line = 3, cex.main = 1.5)
+
+```
+```{r}
+# Outlier Detection
+ggplot(my_data, aes(y = charges)) +
+  geom_boxplot(fill = "orange", alpha = 0.7) +
+  labs(title = "Outlier Detection for Charges", y = "Charges")
+
+```
+
+```{r}
+#Statistical Analysis
+# T-test
+# T-test to compare insurance charges between smokers and non-smokers
+t.test(charges ~ smoker, data = my_data)
+t.test(charges ~ sex, data = my_data)
+```
+
+```{r}
+# ANOVA
+# ANOVA to compare insurance charges across different regions
+anova_test <- aov(charges ~ bmi_category, data = my_data)
+summary(anova_test)
+```
+
+```{r}
+aov_result <- aov(charges ~ region, data = my_data)
+summary(aov_result)
+```
+
+```{r}
+tukey_bmi <- TukeyHSD(anova_test)
+
+# To see the specific pairwise comparisons
+print(tukey_bmi)
+```
+
+
+```{r}
+
+# Linear Regression 
+lm_model <- lm(charges ~ age + bmi + smoker + children + region, data = my_data)
+summary(lm_model)
+
+```
+
+```{r}
+# Machine Learning Model
+# Split data into training and testing 80% train and 20% test
+set.seed(123)
+trainIndex <- createDataPartition(my_data$charge_category, p = 0.8, list = FALSE)
+trainData <- my_data[trainIndex, ]
+testData <- my_data[-trainIndex, ]
+```
+
+```{r}
+# Decision Tree Classification Model
+dt_model <- rpart(charge_category ~ age + bmi + children + smoker + region, data = trainData, method = "class")
+pred_dt <- predict(dt_model, testData, type = "class")
+```
+
+```{r}
+# Random Forest Classification Model
+rf_model <- randomForest(charge_category ~ age + bmi + children + smoker + region, data = trainData, ntree=100)
+pred_rf <- predict(rf_model, testData)
+```
+
+```{r}
+# Confusion Matrix and Metrics for Decision Tree
+cm_dt <- confusionMatrix(pred_dt, testData$charge_category)
+print(cm_dt$table)
+```
+```{r}
+# Plot Confusion Matrix for Decision Tree
+cm_dt_df <- as.data.frame(cm_dt$table)
+colnames(cm_dt_df) <- c("Prediction", "Reference", "Count")
+
+ggplot(cm_dt_df, aes(x = Reference, y = Prediction, fill = Count)) +
+  geom_tile() +
+  geom_text(aes(label = Count), color = "black", size = 5) +
+  scale_fill_gradient(low = "white", high = "blue") +
+  labs(title = "Confusion Matrix - Decision Tree",
+       x = "Actual Class",
+       y = "Predicted Class") +
+  theme_minimal()
+```
+
+```{r}
+#accuracy for decision tree
+accuracy_dt <- cm_dt$overall["Accuracy"]
+cat("Accuracy:", accuracy_dt, "\n")
+```
+
+```{r}
+# Manually Calculate Precision, Recall, and F1 Score for Each Class
+# High class
+precision_high_dt <- cm_dt$table["High", "High"] / sum(cm_dt$table["High", ])
+recall_high_dt <- cm_dt$table["High", "High"] / sum(cm_dt$table[, "High"])
+f1_score_high_dt <- 2 * (precision_high_dt * recall_high_dt) / (precision_high_dt + recall_high_dt)
+
+# Low class
+precision_low_dt <- cm_dt$table["Low", "Low"] / sum(cm_dt$table["Low", ])
+recall_low_dt <- cm_dt$table["Low", "Low"] / sum(cm_dt$table[, "Low"])
+f1_score_low_dt <- 2 * (precision_low_dt * recall_low_dt) / (precision_low_dt + recall_low_dt)
+
+# Medium class
+precision_medium_dt <- cm_dt$table["Medium", "Medium"] / sum(cm_dt$table["Medium", ])
+recall_medium_dt <- cm_dt$table["Medium", "Medium"] / sum(cm_dt$table[, "Medium"])
+f1_score_medium_dt <- 2 * (precision_medium_dt * recall_medium_dt) / (precision_medium_dt + recall_medium_dt)
+
+```
+
+```{r}
+# Print metrics for each class
+cat("Decision Tree Metrics:\n")
+cat("\nMetrics for 'High' class:\n")
+cat("Precision:", precision_high_dt, "\n")
+cat("Recall:", recall_high_dt, "\n")
+cat("F1 Score:", f1_score_high_dt, "\n\n")
+
+cat("Metrics for 'Low' class:\n")
+cat("Precision:", precision_low_dt, "\n")
+cat("Recall:", recall_low_dt, "\n")
+cat("F1 Score:", f1_score_low_dt, "\n\n")
+
+cat("Metrics for 'Medium' class:\n")
+cat("Precision:", precision_medium_dt, "\n")
+cat("Recall:", recall_medium_dt, "\n")
+cat("F1 Score:", f1_score_medium_dt, "\n\n")
+```
+
+```{r}
+# Confusion Matrix and Metrics for Random Forest
+cm_rf <- confusionMatrix(pred_rf, testData$charge_category)
+print(cm_rf$table)
+
+```
+
+```{r}
+# Plot Confusion Matrix for Decision Tree
+cm_rf_df <- as.data.frame(cm_rf$table)
+colnames(cm_rf_df) <- c("Prediction", "Reference", "Count")
+
+ggplot(cm_rf_df, aes(x = Reference, y = Prediction, fill = Count)) +
+  geom_tile() +
+  geom_text(aes(label = Count), color = "black", size = 5) +
+  scale_fill_gradient(low = "white", high = "red") +
+  labs(title = "Confusion Matrix - Random Forest",
+       x = "Actual Class",
+       y = "Predicted Class") +
+  theme_minimal()
+```
+
+```{r}
+#accuracy for random forest
+accuracy_rf <- cm_rf$overall["Accuracy"]
+cat("Accuracy:", accuracy_rf, "\n")
+```
+
+```{r}
+# Manually Calculate Precision, Recall, and F1 Score for Each Class
+# High class
+precision_high_rf <- cm_rf$table["High", "High"] / sum(cm_rf$table["High", ])
+recall_high_rf <- cm_rf$table["High", "High"] / sum(cm_rf$table[, "High"])
+f1_score_high_rf <- 2 * (precision_high_rf * recall_high_rf) / (precision_high_rf + recall_high_rf)
+
+# Low class
+precision_low_rf <- cm_rf$table["Low", "Low"] / sum(cm_rf$table["Low", ])
+recall_low_rf <- cm_rf$table["Low", "Low"] / sum(cm_rf$table[, "Low"])
+f1_score_low_rf <- 2 * (precision_low_rf * recall_low_rf) / (precision_low_rf + recall_low_rf)
+
+# Medium class
+precision_medium_rf <- cm_rf$table["Medium", "Medium"] / sum(cm_rf$table["Medium", ])
+recall_medium_rf <- cm_rf$table["Medium", "Medium"] / sum(cm_rf$table[, "Medium"])
+f1_score_medium_rf <- 2 * (precision_medium_rf * recall_medium_rf) / (precision_medium_rf + recall_medium_rf)
+
+```
+
+```{r}
+# Print metrics for each class
+cat("Random Forest Metrics:\n")
+cat("\nMetrics for 'High' class:\n")
+cat("Precision:", precision_high_rf, "\n")
+cat("Recall:", recall_high_rf, "\n")
+cat("F1 Score:", f1_score_high_rf, "\n\n")
+
+cat("Metrics for 'Low' class:\n")
+cat("Precision:", precision_low_rf, "\n")
+cat("Recall:", recall_low_rf, "\n")
+cat("F1 Score:", f1_score_low_rf, "\n\n")
+
+cat("Metrics for 'Medium' class:\n")
+cat("Precision:", precision_medium_rf, "\n")
+cat("Recall:", recall_medium_rf, "\n")
+cat("F1 Score:", f1_score_medium_rf, "\n\n")
+```
+
+```{r}
+accuracy_df <- data.frame(Model = c("Decision Tree", "Random Forest"), 
+                          Accuracy = c(accuracy_dt, accuracy_rf))
+
+ggplot(accuracy_df, aes(x = Model, y = Accuracy, fill = Model)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Accuracy Comparison", y = "Accuracy") +
+  theme_minimal()
+```
+
+
+
